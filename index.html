@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TALLY // tactical HUD</title>
+<style>
+  :root { --p: #3bffd9; --dim: rgba(59,255,217,.45); }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #060a0d; overflow: hidden; }
+  body { font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; color: var(--p); }
+  #landing {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px; z-index: 10;
+    background:
+      radial-gradient(ellipse at center, rgba(59,255,217,.06) 0%, transparent 60%),
+      #060a0d;
+  }
+  #landing h1 { font-size: 64px; letter-spacing: .35em; font-weight: 400; text-indent: .35em; }
+  #landing .sub { color: var(--dim); font-size: 13px; letter-spacing: .25em; }
+  #landing .rule { width: 320px; height: 1px; background: var(--dim); margin: 10px 0; }
+  .btn {
+    font: inherit; font-size: 15px; letter-spacing: .2em; color: var(--p);
+    background: rgba(59,255,217,.07); border: 1px solid var(--dim);
+    padding: 14px 42px; cursor: pointer; min-width: 300px;
+  }
+  .btn:hover { background: rgba(59,255,217,.18); }
+  .btn[disabled] { opacity: .3; cursor: default; }
+  #keys { color: var(--dim); font-size: 11px; line-height: 1.9; text-align: center; margin-top: 14px; }
+  #status { color: var(--dim); font-size: 11px; letter-spacing: .15em; min-height: 14px; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="landing">
+  <h1>TALLY</h1>
+  <div class="sub">TACTICAL AUGMENTED-REALITY HUD // QUEST 3</div>
+  <div class="rule"></div>
+  <button class="btn" id="btn-ar" disabled>ENTER HUD — PASSTHROUGH AR</button>
+  <button class="btn" id="btn-sim">SIM MODE — DESKTOP</button>
+  <div id="status">checking XR capability…</div>
+  <div id="keys">
+    SIM CONTROLS — drag: look · WASD: move · click: fire · F: designate target<br>
+    M: minimap · T: cycle mode · P: wrist panel · 1-8: panel buttons · N: north-up · C: theme
+  </div>
+</div>
+<div id="app"></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js" } }
+</script>
+<script type="module">
+  import { start } from './src/main.js';
+
+  const btnAR = document.getElementById('btn-ar');
+  const btnSim = document.getElementById('btn-sim');
+  const status = document.getElementById('status');
+
+  let xrOK = false;
+  if (navigator.xr) {
+    try { xrOK = await navigator.xr.isSessionSupported('immersive-ar'); } catch (e) { xrOK = false; }
+  }
+  if (xrOK) {
+    btnAR.disabled = false;
+    status.textContent = 'immersive-ar available — systems ready';
+  } else {
+    status.textContent = 'no immersive-ar on this device — sim mode only';
+  }
+
+  const launch = async (sim) => {
+    btnAR.disabled = true; btnSim.disabled = true;
+    try {
+      await start(sim);
+      document.getElementById('landing').style.display = 'none';
+    } catch (e) {
+      status.textContent = 'LAUNCH FAILED: ' + e.message;
+      btnAR.disabled = !xrOK; btnSim.disabled = false;
+    }
+  };
+  btnAR.addEventListener('click', () => launch(false));
+  btnSim.addEventListener('click', () => launch(true));
+</script>
+</body>
+</html>
