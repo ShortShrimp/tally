@@ -35,7 +35,7 @@ export function createPanels(state, groups) {
     { label: () => 'RESET SESSION', act: () => { state.resetSession(); sfx.confirm(); } },
   ];
   if (!state.sim) {
-    buttons.push({ label: () => 'ROOM CAPTURE', act: () => state.roomCapture() });
+    buttons.push({ label: () => 'ROOM CAPTURE (LABELS)', act: () => state.roomCapture() });
   }
   const BTN_H = 48, BTN_STEP = 56, BTN_TOP = 50;
 
@@ -106,16 +106,25 @@ export function createPanels(state, groups) {
     setFont(c2d, 20, true);
     c2d.fillText(`FPS ${Math.round(state.fps)}`, 210, y);
     if (state.mode === 'SCAN') {
-      y += 40;
+      const sn = state.sense;
+      y += 38;
       setFont(c2d, 20, true);
+      // live sense — primary, needs no room capture
+      if (state.sim) {
+        c2d.fillStyle = t.dim;
+        c2d.fillText('SNS SIM FEED · NOT HW', 18, y);
+      } else if (sn) {
+        c2d.fillStyle = (sn.ready && sn.live > 0) ? t.dim : t.warn;
+        c2d.fillText(sn.ready
+          ? `SNS HIT ${sn.live}/${sn.sources} · ${sn.rate}/S`
+          : 'SNS HIT-TEST UNAVAIL', 18, y);
+      }
+      // scanned scene — optional, semantic labels only
+      y += 26;
       const s = state.sensor;
-      c2d.fillStyle = (!state.sim && !state.depthLive && s && s.planes + s.meshes === 0) ? t.warn : t.dim;
-      const dpt = state.depthLive ? ' · DPT' : '';
-      c2d.fillText(
-        state.sim ? 'SNS SIM FEED'
-          : s ? `SNS ${s.planes} PLN · ${s.meshes} MSH${dpt}` : `SNS STANDBY${dpt}`,
-        18, y
-      );
+      c2d.fillStyle = t.dim;
+      setFont(c2d, 18, true);
+      c2d.fillText(`SCN ${s ? s.planes : 0} PLN · ${s ? s.meshes : 0} MSH`, 18, y);
     }
     vitals.commit();
   }

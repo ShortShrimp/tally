@@ -6,7 +6,7 @@ import { createFlight } from './hud/flight.js';
 import { createMinimap } from './hud/minimap.js';
 import { createTargeting } from './hud/targeting.js';
 import { createContacts } from './hud/contacts.js';
-import { createDepthSense } from './hud/depthsense.js';
+import { createSense } from './hud/sense.js';
 import { createPanels } from './hud/panels.js';
 import { createBoot } from './hud/boot.js';
 import { createSimControls } from './simcontrols.js';
@@ -62,7 +62,8 @@ export async function start(sim) {
     hasBattery: false,
     sensor: null,
     sceneGranted: true,
-    depthLive: false,
+    depthGranted: false,
+    sense: null,
     liveReturns: [],
     gazeRange: null,
     roomCapture: () => {},
@@ -149,7 +150,7 @@ export async function start(sim) {
   state.clearContacts = contacts.clear;
   state.pulseScan = contacts.pulseScan;
   const simMeshes = simObjects.map(o => o.mesh);
-  const depthsense = createDepthSense(state, simMeshes, camera);
+  const sense = createSense(state, simMeshes, camera);
   const panels = createPanels(state, groups);
   const boot = createBoot(state, groups);
   state.applyBrightness = () => applyBrightness(state);
@@ -197,7 +198,9 @@ export async function start(sim) {
     if (xrSession.enabledFeatures) {
       state.sceneGranted = xrSession.enabledFeatures.some(
         f => f === 'plane-detection' || f === 'mesh-detection');
+      state.depthGranted = xrSession.enabledFeatures.includes('depth-sensing');
     }
+    sense.initFan(xrSession);
     if (typeof xrSession.initiateRoomCapture === 'function') {
       state.roomCapture = () => {
         sfx.confirm();
@@ -331,11 +334,13 @@ export async function start(sim) {
     setAlert('core-low', 'caution', 'CORE LOW', state.core < 20 && state.core >= 10);
     setAlert('core-crit', 'warn', 'CORE CRITICAL', state.core < 10);
     setAlert('over-g', 'warn', 'OVER-G / EASE OFF', state.g > 3.2 || state.speed > 3.4);
-    const noScene = !sim && state.mode === 'SCAN' && !state.depthLive &&
-      (!state.sceneGranted || (state.sensor && state.sensor.planes + state.sensor.meshes === 0));
-    setAlert('scene', 'caution',
-      !state.sceneGranted ? 'SCENE ACCESS DENIED'
-        : 'NO SCENE DATA / USE ROOM CAPTURE', noScene);
+    // Live hit-test is the primary sense; an unscanned room is a normal state.
+    // Only warn when the live sense itself is dead.
+    const senseDead = !sim && state.mode === 'SCAN' &&
+      state.sense && state.sense.ready && state.sense.live === 0;
+    setAlert('sense', 'caution', 'NO SENSOR RETURNS', senseDead);
+    const noFan = !sim && state.mode === 'SCAN' && state.sense && !state.sense.ready;
+    setAlert('fan', 'caution', 'HIT-TEST UNAVAILABLE / UPDATE BROWSER', noFan);
     const hasWarn = [...state.alerts.values()].some(a => a.level === 'warn');
     if (hasWarn && state.phase !== 'BOOT') {
       state._klaxT = (state._klaxT || 0) - dt;
@@ -376,7 +381,7 @@ export async function start(sim) {
     flight.update(dt);
     minimap.update(dt);
     targeting.update(dt);
-    depthsense.update(dt, xrFrame, xrRef);
+    sense.update(dt, xrFrame, xrRef);
     contacts.update(dt, xrFrame, xrRef);
     panels.update(dt);
 
