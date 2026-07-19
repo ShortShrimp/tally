@@ -18,6 +18,25 @@ export function createFlight(state, groups) {
   fpv.mesh.renderOrder = 12;
   tight.add(fpv.mesh);
 
+  // --- live gaze rangefinder (under the boresight) ---
+  const rng = makePanel(state, 0.17, 0.05, 256, 76);
+  rng.mesh.position.set(0, -0.15, D);
+  rng.mesh.renderOrder = 11;
+  tight.add(rng.mesh);
+  const rngTick = new Throttle(10, 0.3);
+
+  function drawRng() {
+    rng.clear();
+    if (state.gazeRange != null) {
+      const { c2d, canvas } = rng;
+      setFont(c2d, 32, true);
+      c2d.textAlign = 'center';
+      c2d.fillStyle = state.theme.p;
+      c2d.fillText(`RNG ${state.gazeRange.toFixed(1)}M`, canvas.width / 2, 50);
+    }
+    rng.commit();
+  }
+
   // --- pitch ladder ---
   const ladder = makePanel(state, 0.62, 0.62, 512, 512);
   ladder.mesh.position.set(0, 0, D - 0.02);
@@ -195,8 +214,9 @@ export function createFlight(state, groups) {
   return {
     update(dt) {
       const visible = state.phase !== 'BOOT';
-      reticle.mesh.visible = fpv.mesh.visible = ladder.mesh.visible = tape.mesh.visible = visible;
+      reticle.mesh.visible = fpv.mesh.visible = ladder.mesh.visible = tape.mesh.visible = rng.mesh.visible = visible;
       if (!visible) { arrow.visible = false; return; }
+      if (rngTick.ready(dt)) drawRng();
 
       // counter-roll so the ladder stays level against the real horizon
       ladder.mesh.rotation.z = -state.roll;

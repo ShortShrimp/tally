@@ -16,7 +16,7 @@ export function createMinimap(state, groups) {
     panel.clear();
     const W = canvas.width, cx = W / 2, cy = W / 2, R = W * 0.44;
     const t = state.theme;
-    const rangeM = 4; // radar radius in meters
+    const rangeM = 6; // radar radius in meters — matches live sensor reach
     const scale = R / rangeM;
     const rot = state.mapNorthUp ? 0 : -THREE.MathUtils.degToRad(state.heading);
 
@@ -33,7 +33,7 @@ export function createMinimap(state, groups) {
     // grid rings + cross
     c2d.strokeStyle = t.faint;
     c2d.lineWidth = 3;
-    for (const r of [1, 2, 3, 4]) {
+    for (const r of [1.5, 3, 4.5, 6]) {
       c2d.beginPath(); c2d.arc(0, 0, r * scale, 0, Math.PI * 2); c2d.stroke();
     }
     c2d.beginPath();
@@ -68,6 +68,16 @@ export function createMinimap(state, groups) {
       const a = i / state.crumbs.length;
       c2d.globalAlpha = 0.15 + 0.45 * a;
       c2d.fillRect(x - 2, y - 2, 4, 4);
+    }
+    c2d.globalAlpha = 1;
+
+    // live depth returns (sonar traces)
+    c2d.fillStyle = t.p;
+    for (const r of (state.liveReturns || [])) {
+      const [x, y] = toMap(r.p.x, r.p.z);
+      if (x * x + y * y > R * R) continue;
+      c2d.globalAlpha = Math.max(0.12, Math.min(0.7, 1 - (state.time - r.seen) / 1.4));
+      c2d.fillRect(x - 2, y - 2, 5, 5);
     }
     c2d.globalAlpha = 1;
 

@@ -153,6 +153,17 @@ export function createContacts(state, scene) {
     sfx.tick();
   }
 
+  function spawnDot(p) {
+    const fillMat = new THREE.MeshBasicMaterial({
+      color: state.theme.hex, transparent: true, opacity: 0.55, depthTest: false, blending: THREE.AdditiveBlending });
+    const dot = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), fillMat);
+    dot.position.copy(p);
+    dot.rotation.y = Math.random() * Math.PI;
+    dot.renderOrder = 7;
+    scene.add(dot);
+    highlights.push({ objs: [dot], mats: [fillMat], baseOps: [0.55], born: state.time });
+  }
+
   function pulseScan() {
     if (wave || state.phase === 'BOOT') return;
     ringMat.color.setHex(state.theme.hex);
@@ -175,6 +186,11 @@ export function createContacts(state, scene) {
       };
       for (const cand of simCandidates) if (crossed(cand.center)) spawnHighlight(cand.center, cand.size, cand.quat);
       for (const rec of xrTracked.values()) if (crossed(rec.center)) spawnHighlight(rec.center, rec.size, rec.quat);
+      // live depth returns light up as the wave rolls over them
+      for (const r of (state.liveReturns || [])) {
+        if (highlights.length > 110) break;
+        if (crossed(r.p)) spawnDot(r.p);
+      }
       if (wave.r > 8) { wave = null; ring.visible = false; }
     }
     for (let i = highlights.length - 1; i >= 0; i--) {

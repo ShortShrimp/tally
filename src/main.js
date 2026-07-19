@@ -6,6 +6,7 @@ import { createFlight } from './hud/flight.js';
 import { createMinimap } from './hud/minimap.js';
 import { createTargeting } from './hud/targeting.js';
 import { createContacts } from './hud/contacts.js';
+import { createDepthSense } from './hud/depthsense.js';
 import { createPanels } from './hud/panels.js';
 import { createBoot } from './hud/boot.js';
 import { createSimControls } from './simcontrols.js';
@@ -61,6 +62,10 @@ export async function start(sim) {
     hasBattery: false,
     sensor: null,
     sceneGranted: true,
+    depthLive: false,
+    liveReturns: [],
+    gazeRange: null,
+    roomCapture: () => {},
     fps: 72,
     shake: 0,
     alerts: new Map(),
@@ -143,6 +148,8 @@ export async function start(sim) {
   for (const o of simObjects) contacts.registerSim(o.mesh, o.size, o.label);
   state.clearContacts = contacts.clear;
   state.pulseScan = contacts.pulseScan;
+  const simMeshes = simObjects.map(o => o.mesh);
+  const depthsense = createDepthSense(state, simMeshes, camera);
   const panels = createPanels(state, groups);
   const boot = createBoot(state, groups);
   state.applyBrightness = () => applyBrightness(state);
@@ -169,15 +176,33 @@ export async function start(sim) {
   } else {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local-floor');
-    xrSession = await navigator.xr.requestSession('immersive-ar', {
+    const sessionInit = {
       requiredFeatures: ['local-floor'],
-      optionalFeatures: ['hand-tracking', 'hit-test', 'anchors', 'plane-detection', 'mesh-detection']
-    });
+      optionalFeatures: ['hand-tracking', 'hit-test', 'anchors', 'plane-detection', 'mesh-detection', 'depth-sensing'],
+      depthSensing: {
+        usagePreference: ['cpu-optimized'],
+        dataFormatPreference: ['luminance-alpha', 'float32']
+      }
+    };
+    try {
+      xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
+    } catch (e) {
+      // some browsers reject the depthSensing config outright — retry without it
+      delete sessionInit.depthSensing;
+      sessionInit.optionalFeatures = sessionInit.optionalFeatures.filter(f => f !== 'depth-sensing');
+      xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
+    }
     await renderer.xr.setSession(xrSession);
     xrSession.addEventListener('end', () => location.reload());
     if (xrSession.enabledFeatures) {
       state.sceneGranted = xrSession.enabledFeatures.some(
         f => f === 'plane-detection' || f === 'mesh-detection');
+    }
+    if (typeof xrSession.initiateRoomCapture === 'function') {
+      state.roomCapture = () => {
+        sfx.confirm();
+        xrSession.initiateRoomCapture().catch(() => {});
+      };
     }
 
     xrSession.addEventListener('select', () => actions.tap());
@@ -238,7 +263,7 @@ export async function start(sim) {
     if (state.wristOpen && rightIndexTip && panels.wristMesh.visible) {
       const local = panels.wristMesh.worldToLocal(rightIndexTip.clone());
       const u = (local.x + 0.13) / 0.26;
-      const v = (0.19 - local.y) / 0.38;
+      const v = (0.21 - local.y) / 0.42;
       if (u >= 0 && u <= 1 && v >= 0 && v <= 1 && Math.abs(local.z) < 0.05) {
         const i = panels.hitButton(u, v);
         state.wristHover = i;
@@ -252,6 +277,8 @@ export async function start(sim) {
 
   // ---------- main loop ----------
   const euler = new THREE.Euler();
+  const _gazeRay = new THREE.Raycaster();
+  const _rayDir = new THREE.Vector3();
   const prevPos = new THREE.Vector3(0, 1.7, 0);
   const smoothVel = new THREE.Vector3();
   const prevVel = new THREE.Vector3();
@@ -304,10 +331,11 @@ export async function start(sim) {
     setAlert('core-low', 'caution', 'CORE LOW', state.core < 20 && state.core >= 10);
     setAlert('core-crit', 'warn', 'CORE CRITICAL', state.core < 10);
     setAlert('over-g', 'warn', 'OVER-G / EASE OFF', state.g > 3.2 || state.speed > 3.4);
-    const noScene = !sim && state.mode === 'SCAN' &&
+    const noScene = !sim && state.mode === 'SCAN' && !state.depthLive &&
       (!state.sceneGranted || (state.sensor && state.sensor.planes + state.sensor.meshes === 0));
     setAlert('scene', 'caution',
-      state.sceneGranted ? 'NO SCENE DATA / RUN SPACE SETUP' : 'SCENE ACCESS DENIED', noScene);
+      !state.sceneGranted ? 'SCENE ACCESS DENIED'
+        : 'NO SCENE DATA / USE ROOM CAPTURE', noScene);
     const hasWarn = [...state.alerts.values()].some(a => a.level === 'warn');
     if (hasWarn && state.phase !== 'BOOT') {
       state._klaxT = (state._klaxT || 0) - dt;
@@ -332,11 +360,24 @@ export async function start(sim) {
     state.shake = Math.max(0, state.shake - dt * 3);
     updateRig(groups, camera, dt, state.shake);
 
+    // live gaze rangefinder
+    if (sim) {
+      _rayDir.set(0, 0, -1).applyQuaternion(state.camQuat);
+      _gazeRay.set(state.camPos, _rayDir);
+      const hit = _gazeRay.intersectObjects(simMeshes, false)[0];
+      state.gazeRange = hit ? hit.distance : null;
+    } else {
+      state.gazeRange = latestHit ? latestHit.distanceTo(state.camPos) : null;
+    }
+
+    const xrFrame = (!sim && frame) ? frame : null;
+    const xrRef = xrFrame ? renderer.xr.getReferenceSpace() : null;
     boot.update(dt);
     flight.update(dt);
     minimap.update(dt);
     targeting.update(dt);
-    contacts.update(dt, (!sim && frame) ? frame : null, (!sim && frame) ? renderer.xr.getReferenceSpace() : null);
+    depthsense.update(dt, xrFrame, xrRef);
+    contacts.update(dt, xrFrame, xrRef);
     panels.update(dt);
 
     if (state.callout && state.time > state.callout.until) state.callout = null;

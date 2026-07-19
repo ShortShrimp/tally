@@ -15,7 +15,7 @@ export function createPanels(state, groups) {
   groups.rig.add(alerts.mesh);
 
   // --- wrist / control panel ---
-  const wrist = makePanel(state, 0.26, 0.38, 384, 560);
+  const wrist = makePanel(state, 0.26, 0.42, 384, 620);
   wrist.mesh.visible = false;
   groups.rig.add(wrist.mesh); // sim: fixed placement; XR: repositioned to wrist each frame
 
@@ -34,6 +34,9 @@ export function createPanels(state, groups) {
     { label: () => 'CLEAR TARGETS', act: () => { state.clearTargets(); sfx.confirm(); } },
     { label: () => 'RESET SESSION', act: () => { state.resetSession(); sfx.confirm(); } },
   ];
+  if (!state.sim) {
+    buttons.push({ label: () => 'ROOM CAPTURE', act: () => state.roomCapture() });
+  }
   const BTN_H = 48, BTN_STEP = 56, BTN_TOP = 50;
 
   function drawVitals() {
@@ -106,10 +109,11 @@ export function createPanels(state, groups) {
       y += 40;
       setFont(c2d, 20, true);
       const s = state.sensor;
-      c2d.fillStyle = (!state.sim && s && s.planes + s.meshes === 0) ? t.warn : t.dim;
+      c2d.fillStyle = (!state.sim && !state.depthLive && s && s.planes + s.meshes === 0) ? t.warn : t.dim;
+      const dpt = state.depthLive ? ' · DPT' : '';
       c2d.fillText(
         state.sim ? 'SNS SIM FEED'
-          : s ? `SNS ${s.planes} PLN · ${s.meshes} MSH` : 'SNS STANDBY',
+          : s ? `SNS ${s.planes} PLN · ${s.meshes} MSH${dpt}` : `SNS STANDBY${dpt}`,
         18, y
       );
     }
@@ -179,7 +183,7 @@ export function createPanels(state, groups) {
 
   // u,v in [0,1], v measured from top of the panel texture
   function hitButton(u, v) {
-    const x = u * 384, y = v * 560;
+    const x = u * 384, y = v * 620;
     if (x < 14 || x > 370) return -1;
     const i = Math.floor((y - BTN_TOP) / BTN_STEP);
     if (i < 0 || i >= buttons.length) return -1;
